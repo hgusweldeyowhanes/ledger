@@ -1,0 +1,13 @@
+{% extends "blog/base.html" %}
+{% block title %}Log in — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Log in</h1>
+  </section>
+  <form class="stack" method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn" type="submit">Enter</button>
+  </form>
+  <p class="meta">New here? <a href="{% url 'blog:register' %}">Create an account</a></p>
+{% endblock %}

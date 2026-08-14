@@ -1,0 +1,12 @@
+{% extends "blog/base.html" %}
+{% block title %}Join — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Join Ledger</h1>
+  </section>
+  <form class="stack" method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn" type="submit">Create account</button>
+  </form>
+{% endblock %}

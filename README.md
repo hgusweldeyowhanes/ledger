@@ -1,52 +1,59 @@
-1. Create & activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-2. Install dependencies
-  pip install python 3.13
-  pip install Django
-  pip install djangorestframework
-3. Apply migrations & run server
-python manage.py makemigrations
+# Ledger
+
+A magazine-style **Django blog** with a public site and a versioned JSON API.
+
+- Draft / published / archived workflow and scheduled `published_at`
+- Categories, tags, markdown, reading time, view counts
+- Nested comments, likes, bookmarks
+- Author studio (write, edit, saved posts)
+- JWT + token registration, pagination, search, filters
+- RSS feed and sitemap
+- Soft-delete instead of hard-deleting posts
+
+## Run
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
+pip install -r requirements.txt
 python manage.py migrate
+python manage.py seed_blog
 python manage.py runserver
-4. Access the app
-Go to: http://127.0.0.1:8000
-5. Screenshot
+```
 
+Open http://127.0.0.1:8000
 
-# 🗨️ Django RoomChat
+Demo login: **hgus** / **ledger12345**
 
-A real-time RoomChat application built with Django. Users can create chat rooms, join discussions, and post messages. Ideal for small communities, study groups, or team collaboration.
+Admin: `python manage.py createsuperuser` then http://127.0.0.1:8000/admin/
 
+## API
 
-## 🚀 Features
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/register/` | username, email, password, password2 |
+| POST | `/api/token/` | JWT obtain |
+| POST | `/api/token/refresh/` | JWT refresh |
+| GET | `/api/me/` | current user |
+| GET | `/api/posts/` | published list (search, filter, order) |
+| POST | `/api/posts/` | create (auth) |
+| GET | `/api/posts/{slug}/` | detail + related |
+| POST | `/api/posts/{slug}/publish/` | author |
+| POST | `/api/posts/{slug}/like/` | toggle |
+| POST | `/api/posts/{slug}/bookmark/` | toggle |
+| GET | `/api/posts/mine/` | your drafts + published |
+| GET | `/api/feed/` | RSS |
+| GET | `/sitemap.xml` | sitemap |
 
-- ✅ Create, join, and delete chat rooms
-- 💬 Post messages in real-time 
-- 🔍 Filter/search rooms by topic or name
-- 👤 Basic user authentication (Login/Register)
-- 🧩 Django REST Framework API (optional)
+Example:
 
-## 🛠️ Technologies Used
+```bash
+curl http://127.0.0.1:8000/api/posts/
+```
 
-- Python 3.x
-- Django
-- SQLite (default)
-- HTML/CSS
-- Django REST Framework 
-- Git & GitHub
+## Tests
 
----
-
-## 📂 Project Structure
-RoomChat/  called  product  
-├── project/              # Django project settings
-│   └── settings.py
-├── chat/                 # Main app: models, views, urls
-│   ├── models.py
-│   ├── views.py
-│   ├── templates/
-├── static/               # CSS, JS, etc.
-├── manage.py
-├── .gitignore
-└── README.md
+```bash
+python manage.py test blog
+```

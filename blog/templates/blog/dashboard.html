@@ -1,0 +1,33 @@
+{% extends "blog/base.html" %}
+{% block title %}Studio — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Studio</h1>
+    <p class="lede">Your drafts, published work, and saved essays.</p>
+    <p><a class="btn" href="{% url 'blog:post-create' %}">Write</a></p>
+  </section>
+  <h2>Your posts</h2>
+  <table class="table">
+    <thead><tr><th>Title</th><th>Status</th><th>Views</th><th></th></tr></thead>
+    <tbody>
+      {% for post in posts %}
+        <tr>
+          <td><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></td>
+          <td>{{ post.get_status_display }}</td>
+          <td>{{ post.view_count }}</td>
+          <td><a href="{% url 'blog:post-edit' post.slug %}">Edit</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No posts yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Saved</h2>
+  <div class="grid">
+    {% for post in bookmarks %}
+      {% include "blog/_card.html" %}
+    {% empty %}
+      <p class="empty">Nothing saved yet.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

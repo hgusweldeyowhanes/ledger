@@ -22,11 +22,11 @@ env/
 .DS_Store
 Thumbs.db
 
-# Django migrations (optional)
-**/migrations/
-**/migrations/*.py
-**/migrations/__pycache__/
+# Media uploads
+media/
+
+# Collected static
+staticfiles/
 
 # Logs
 *.log
-

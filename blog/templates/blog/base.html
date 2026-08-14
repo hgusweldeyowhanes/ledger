@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ledger{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}Essays on building software from Addis Ababa.{% endblock %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'blog/css/blog.css' %}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="{% url 'blog:home' %}">Ledger</a>
+    <nav class="nav">
+      {% for cat in nav_categories %}
+        <a href="{{ cat.get_absolute_url }}">{{ cat.name }}</a>
+      {% endfor %}
+    </nav>
+    <form class="search" action="{% url 'blog:search' %}" method="get">
+      <input type="search" name="q" placeholder="Search" value="{{ query|default:'' }}">
+    </form>
+    <div class="auth">
+      {% if user.is_authenticated %}
+        <a href="{% url 'blog:post-create' %}">Write</a>
+        <a href="{% url 'blog:dashboard' %}">Studio</a>
+        <a href="{% url 'blog:logout' %}">Log out</a>
+      {% else %}
+        <a href="{% url 'blog:login' %}">Log in</a>
+        <a class="btn" href="{% url 'blog:register' %}">Join</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if messages %}
+    <div class="flash">
+      {% for message in messages %}
+        <p class="{{ message.tags }}">{{ message }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>Ledger · built for people who ship. <a href="{% url 'blog:rss' %}">RSS</a> · <a href="/api/posts/">API</a></p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,44 @@
+{% extends "blog/base.html" %}
+{% block title %}Ledger — essays{% endblock %}
+{% block content %}
+  {% for post in featured %}
+    <section class="hero">
+      <p class="eyebrow">Featured</p>
+      <h1><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></h1>
+      <p class="lede">{{ post.excerpt }}</p>
+      <p class="meta">{{ post.author }} · {{ post.reading_time }} min · {{ post.published_at|date:"M j, Y" }}</p>
+    </section>
+  {% empty %}
+    <section class="hero">
+      <p class="eyebrow">Ledger</p>
+      <h1>Write things worth keeping.</h1>
+      <p class="lede">A magazine-style blog with drafts, tags, comments, and a JSON API.</p>
+    </section>
+  {% endfor %}
+
+  <section class="grid-wrap">
+    <div class="grid">
+      {% for post in posts %}
+        {% include "blog/_card.html" %}
+      {% empty %}
+        <p class="empty">No published posts yet. <a href="{% url 'blog:post-create' %}">Write the first one.</a></p>
+      {% endfor %}
+    </div>
+    <aside>
+      <h3>Trending</h3>
+      <ol class="trending">
+        {% for post in trending %}
+          <li><a href="{{ post.get_absolute_url }}">{{ post.title }}</a><span>{{ post.view_count }} reads</span></li>
+        {% endfor %}
+      </ol>
+      <h3>Tags</h3>
+      <div class="tag-cloud">
+        {% for tag in nav_tags %}
+          <a href="{{ tag.get_absolute_url }}">#{{ tag.name }}</a>
+        {% endfor %}
+      </div>
+    </aside>
+  </section>
+
+  {% include "blog/_pagination.html" %}
+{% endblock %}

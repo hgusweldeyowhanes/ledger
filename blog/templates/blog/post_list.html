@@ -1,0 +1,16 @@
+{% extends "blog/base.html" %}
+{% block title %}{{ heading }} — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>{{ heading }}</h1>
+    <p class="lede">{{ subheading }}</p>
+  </section>
+  <div class="grid full">
+    {% for post in posts %}
+      {% include "blog/_card.html" %}
+    {% empty %}
+      <p class="empty">Nothing here yet.</p>
+    {% endfor %}
+  </div>
+  {% include "blog/_pagination.html" %}
+{% endblock %}

@@ -1,0 +1,15 @@
+<article class="card">
+  {% if post.cover_image %}
+    <a href="{{ post.get_absolute_url }}"><img src="{{ post.cover_image.url }}" alt=""></a>
+  {% endif %}
+  <div class="card-body">
+    <p class="cats">
+      {% for c in post.categories.all %}
+        <a href="{{ c.get_absolute_url }}">{{ c.name }}</a>
+      {% endfor %}
+    </p>
+    <h2><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></h2>
+    <p>{{ post.excerpt }}</p>
+    <p class="meta">{{ post.author }} · {{ post.reading_time }} min · {{ post.likes_count|default:0 }} likes</p>
+  </div>
+</article>
