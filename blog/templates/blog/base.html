@@ -1,10 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Ledger{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}Essays on building software from Addis Ababa.{% endblock %}">
+  {% block extra_head %}{% endblock %}
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("ledger-theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
@@ -18,12 +29,20 @@
       {% for cat in nav_categories %}
         <a href="{{ cat.get_absolute_url }}">{{ cat.name }}</a>
       {% endfor %}
+      <a href="{% url 'blog:series-list' %}">Series</a>
+      {% if user.is_authenticated %}
+        <a href="{% url 'blog:following' %}">Following</a>
+      {% endif %}
     </nav>
     <form class="search" action="{% url 'blog:search' %}" method="get">
       <input type="search" name="q" placeholder="Search" value="{{ query|default:'' }}">
     </form>
     <div class="auth">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">Theme</button>
       {% if user.is_authenticated %}
+        <a class="notif-link" href="{% url 'blog:notifications' %}">
+          Alerts{% if unread_notifications %} <span class="badge">{{ unread_notifications }}</span>{% endif %}
+        </a>
         <a href="{% url 'blog:post-create' %}">Write</a>
         <a href="{% url 'blog:dashboard' %}">Studio</a>
         <a href="{% url 'blog:logout' %}">Log out</a>
@@ -47,7 +66,17 @@
   </main>
 
   <footer class="site-footer">
-    <p>Ledger · built for people who ship. <a href="{% url 'blog:rss' %}">RSS</a> · <a href="/api/posts/">API</a></p>
+    <div class="footer-grid">
+      <p>Ledger · built for people who ship. <a href="{% url 'blog:rss' %}">RSS</a> · <a href="/api/posts/">API</a></p>
+      <form class="newsletter" method="post" action="{% url 'blog:newsletter-subscribe' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <label for="id_email">Newsletter</label>
+        {{ newsletter_form.email }}
+        <button class="btn" type="submit">Subscribe</button>
+      </form>
+    </div>
   </footer>
+  <script src="{% static 'blog/js/theme.js' %}"></script>
 </body>
 </html>

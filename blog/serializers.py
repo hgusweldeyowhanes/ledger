@@ -1,7 +1,18 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Category, Comment, Post, Tag
+from .models import (
+    AuthorFollow,
+    Category,
+    Comment,
+    NewsletterSubscriber,
+    Notification,
+    Post,
+    Series,
+    SeriesMembership,
+    Tag,
+)
+from .services import comment_should_auto_approve
 
 User = get_user_model()
 
@@ -52,12 +63,16 @@ class TagSerializer(serializers.ModelSerializer):
 class CommentSerializer(serializers.ModelSerializer):
     author = UserPublicSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
+    post_title = serializers.CharField(source="post.title", read_only=True)
+    post_slug = serializers.CharField(source="post.slug", read_only=True)
 
     class Meta:
         model = Comment
         fields = (
             "id",
             "post",
+            "post_title",
+            "post_slug",
             "author",
             "parent",
             "body",
@@ -65,7 +80,7 @@ class CommentSerializer(serializers.ModelSerializer):
             "created_at",
             "replies",
         )
-        read_only_fields = ("is_approved", "created_at")
+        read_only_fields = ("is_approved", "created_at", "post_title", "post_slug")
 
     def get_replies(self, obj):
         if obj.parent_id:
@@ -78,6 +93,56 @@ class CommentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Replies can only be one level deep.")
         return parent
 
+    def create(self, validated_data):
+        request = self.context["request"]
+        post = validated_data["post"]
+        validated_data["author"] = request.user
+        validated_data["is_approved"] = comment_should_auto_approve(request.user, post)
+        return super().create(validated_data)
+
+
+class SeriesBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Series
+        fields = ("id", "title", "slug")
+
+
+class SeriesMembershipSerializer(serializers.ModelSerializer):
+    post_title = serializers.CharField(source="post.title", read_only=True)
+    post_slug = serializers.CharField(source="post.slug", read_only=True)
+
+    class Meta:
+        model = SeriesMembership
+        fields = ("id", "post", "post_title", "post_slug", "position")
+
+
+class SeriesSerializer(serializers.ModelSerializer):
+    author = UserPublicSerializer(read_only=True)
+    memberships = SeriesMembershipSerializer(many=True, read_only=True)
+    post_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Series
+        fields = (
+            "id",
+            "title",
+            "slug",
+            "description",
+            "author",
+            "cover_image",
+            "memberships",
+            "post_count",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("slug",)
+
+
+class SeriesWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Series
+        fields = ("title", "description", "cover_image")
+
 
 class PostListSerializer(serializers.ModelSerializer):
     author = UserPublicSerializer(read_only=True)
@@ -86,6 +151,7 @@ class PostListSerializer(serializers.ModelSerializer):
     likes_count = serializers.IntegerField(read_only=True)
     comments_count = serializers.IntegerField(read_only=True)
     url = serializers.HyperlinkedIdentityField(view_name="post-detail", lookup_field="slug")
+    series = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
@@ -105,8 +171,20 @@ class PostListSerializer(serializers.ModelSerializer):
             "view_count",
             "likes_count",
             "comments_count",
+            "series",
             "url",
         )
+
+    def get_series(self, obj):
+        membership = obj.series_membership()
+        if not membership:
+            return None
+        return {
+            "id": membership.series_id,
+            "title": membership.series.title,
+            "slug": membership.series.slug,
+            "position": membership.position,
+        }
 
 
 class PostDetailSerializer(PostListSerializer):
@@ -123,6 +201,13 @@ class PostDetailSerializer(PostListSerializer):
         write_only=True,
         required=False,
     )
+    series_id = serializers.PrimaryKeyRelatedField(
+        queryset=Series.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+    series_position = serializers.IntegerField(write_only=True, required=False, min_value=1)
     is_liked = serializers.SerializerMethodField()
     is_bookmarked = serializers.SerializerMethodField()
     comments = serializers.SerializerMethodField()
@@ -135,6 +220,8 @@ class PostDetailSerializer(PostListSerializer):
             "meta_description",
             "category_ids",
             "tag_names",
+            "series_id",
+            "series_position",
             "is_liked",
             "is_bookmarked",
             "comments",
@@ -168,14 +255,65 @@ class PostDetailSerializer(PostListSerializer):
             tags.append(tag)
         post.tags.set(tags)
 
+    def _apply_series(self, post, series, position, user):
+        SeriesMembership.objects.filter(post=post).delete()
+        if series is None:
+            return
+        if series.author_id != user.pk and not user.is_staff:
+            raise serializers.ValidationError({"series_id": "You can only add posts to your own series."})
+        position = position or 1
+        while SeriesMembership.objects.filter(series=series, position=position).exists():
+            position += 1
+        SeriesMembership.objects.create(series=series, post=post, position=position)
+
     def create(self, validated_data):
         tag_names = validated_data.pop("tag_names", None)
+        series = validated_data.pop("series_id", None)
+        position = validated_data.pop("series_position", None)
         post = super().create(validated_data)
         self._apply_tags(post, tag_names)
+        self._apply_series(post, series, position, self.context["request"].user)
         return post
 
     def update(self, instance, validated_data):
         tag_names = validated_data.pop("tag_names", None)
+        series = validated_data.pop("series_id", serializers.empty)
+        position = validated_data.pop("series_position", None)
         post = super().update(instance, validated_data)
         self._apply_tags(post, tag_names)
+        if series is not serializers.empty:
+            self._apply_series(post, series, position, self.context["request"].user)
         return post
+
+
+class NewsletterSubscribeSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    actor = UserPublicSerializer(read_only=True)
+    post_slug = serializers.CharField(source="post.slug", read_only=True, allow_null=True)
+    post_title = serializers.CharField(source="post.title", read_only=True, allow_null=True)
+
+    class Meta:
+        model = Notification
+        fields = (
+            "id",
+            "actor",
+            "verb",
+            "post",
+            "post_slug",
+            "post_title",
+            "comment",
+            "is_read",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class AuthorFollowSerializer(serializers.ModelSerializer):
+    author = UserPublicSerializer(read_only=True)
+
+    class Meta:
+        model = AuthorFollow
+        fields = ("id", "author", "created_at")

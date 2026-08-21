@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ledger
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/posts/
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: SERVE_SPA
+        value: "true"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: SITE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: EMAIL_USE_TLS
+        value: "true"

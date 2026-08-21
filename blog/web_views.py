@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.db.models import Count, Q
@@ -8,8 +8,22 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.views.generic import DetailView, ListView
 
-from .forms import CommentForm, PostForm, RegisterForm
-from .models import Bookmark, Category, Comment, Post, PostLike, Tag
+from .forms import CommentForm, NewsletterForm, PostForm, RegisterForm, SeriesForm
+from .models import (
+    AuthorFollow,
+    Bookmark,
+    Category,
+    Comment,
+    Notification,
+    Post,
+    PostLike,
+    Series,
+    SeriesMembership,
+    Tag,
+)
+from .services import comment_should_auto_approve, confirm_subscriber, subscribe_newsletter, unsubscribe
+
+User = get_user_model()
 
 
 def _annotated_posts(user):
@@ -74,6 +88,32 @@ class PostDetailView(DetailView):
         ctx["is_liked"] = user.is_authenticated and post.likes.filter(user=user).exists()
         ctx["is_bookmarked"] = user.is_authenticated and post.bookmarks.filter(user=user).exists()
         ctx["likes_count"] = post.likes.count()
+        membership = post.series_membership()
+        ctx["series_membership"] = membership
+        if membership:
+            siblings = list(
+                SeriesMembership.objects.filter(series=membership.series)
+                .select_related("post")
+                .order_by("position")
+            )
+            idx = next((i for i, m in enumerate(siblings) if m.pk == membership.pk), None)
+            ctx["series_prev"] = siblings[idx - 1].post if idx and idx > 0 else None
+            ctx["series_next"] = (
+                siblings[idx + 1].post if idx is not None and idx + 1 < len(siblings) else None
+            )
+            ctx["series"] = membership.series
+        ctx["is_following_author"] = (
+            user.is_authenticated
+            and user.pk != post.author_id
+            and AuthorFollow.objects.filter(follower=user, author=post.author).exists()
+        )
+        if user.is_authenticated and (user.pk == post.author_id or user.is_staff):
+            ctx["pending_comments"] = post.comments.filter(
+                is_approved=False, is_deleted=False
+            ).count()
+        ctx["absolute_url"] = self.request.build_absolute_uri(post.get_absolute_url())
+        if post.cover_image:
+            ctx["cover_absolute"] = self.request.build_absolute_uri(post.cover_image.url)
         return ctx
 
 
@@ -146,14 +186,39 @@ class AuthorView(ListView):
     context_object_name = "posts"
     paginate_by = 9
 
+    def dispatch(self, request, *args, **kwargs):
+        self.author = get_object_or_404(User, username=kwargs["username"])
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
-        return _annotated_posts(self.request.user).published().filter(author__username=self.kwargs["username"])
+        return _annotated_posts(self.request.user).published().filter(author=self.author)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["heading"] = self.kwargs["username"]
+        ctx["heading"] = self.author.username
         ctx["subheading"] = "Published work"
+        ctx["profile_author"] = self.author
+        user = self.request.user
+        ctx["is_following_author"] = (
+            user.is_authenticated
+            and user.pk != self.author.pk
+            and AuthorFollow.objects.filter(follower=user, author=self.author).exists()
+        )
+        ctx["follower_count"] = AuthorFollow.objects.filter(author=self.author).count()
         return ctx
+
+
+@method_decorator(login_required, name="dispatch")
+class FollowingFeedView(ListView):
+    template_name = "blog/following.html"
+    context_object_name = "posts"
+    paginate_by = 9
+
+    def get_queryset(self):
+        author_ids = AuthorFollow.objects.filter(follower=self.request.user).values_list(
+            "author_id", flat=True
+        )
+        return _annotated_posts(self.request.user).published().filter(author_id__in=author_ids)
 
 
 @method_decorator(login_required, name="dispatch")
@@ -171,11 +236,75 @@ class DashboardView(ListView):
             .filter(bookmarks__user=self.request.user)
             .select_related("author")
         )
+        ctx["pending_comments"] = (
+            Comment.objects.filter(
+                post__author=self.request.user,
+                is_approved=False,
+                is_deleted=False,
+            )
+            .select_related("author", "post")
+            .order_by("-created_at")
+        )
+        ctx["series_list"] = Series.objects.filter(author=self.request.user)
+        ctx["series_form"] = SeriesForm()
+        return ctx
+
+
+@method_decorator(login_required, name="dispatch")
+class NotificationListView(ListView):
+    template_name = "blog/notifications.html"
+    context_object_name = "notifications"
+    paginate_by = 30
+
+    def get_queryset(self):
+        return (
+            Notification.objects.filter(recipient=self.request.user)
+            .select_related("actor", "post", "comment")
+        )
+
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        if request.GET.get("mark") == "all":
+            Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+            return redirect("blog:notifications")
+        return response
+
+
+class SeriesListView(ListView):
+    template_name = "blog/series_list.html"
+    context_object_name = "series_list"
+    paginate_by = 12
+
+    def get_queryset(self):
+        return Series.objects.select_related("author").annotate(
+            post_count=Count("memberships", distinct=True)
+        )
+
+
+class SeriesDetailView(DetailView):
+    template_name = "blog/series_detail.html"
+    model = Series
+    context_object_name = "series"
+    slug_field = "slug"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        memberships = (
+            SeriesMembership.objects.filter(series=self.object)
+            .select_related("post", "post__author")
+            .order_by("position")
+        )
+        ctx["memberships"] = memberships
         return ctx
 
 
 def _save_post(request, instance=None):
-    form = PostForm(request.POST or None, request.FILES or None, instance=instance)
+    form = PostForm(
+        request.POST or None,
+        request.FILES or None,
+        instance=instance,
+        user=request.user,
+    )
     if request.method == "POST" and form.is_valid():
         post = form.save(commit=False)
         post.author = request.user
@@ -188,10 +317,21 @@ def _save_post(request, instance=None):
             tags.append(tag)
         if names:
             post.tags.set(tags)
+        series = form.cleaned_data.get("series")
+        position = form.cleaned_data.get("series_position") or 1
+        SeriesMembership.objects.filter(post=post).delete()
+        if series and series.author_id == request.user.pk:
+            while SeriesMembership.objects.filter(series=series, position=position).exists():
+                position += 1
+            SeriesMembership.objects.create(series=series, post=post, position=position)
         messages.success(request, "Post saved.")
         return redirect(post.get_absolute_url() if post.is_live() else "blog:dashboard")
     if instance:
         form.fields["tag_names"].initial = ", ".join(instance.tags.values_list("name", flat=True))
+        membership = instance.series_membership()
+        if membership:
+            form.fields["series"].initial = membership.series_id
+            form.fields["series_position"].initial = membership.position
     return render(request, "blog/post_form.html", {"form": form, "editing": instance is not None})
 
 
@@ -237,13 +377,100 @@ def add_comment(request, slug):
         comment = form.save(commit=False)
         comment.post = post
         comment.author = request.user
+        comment.is_approved = comment_should_auto_approve(request.user, post)
         parent_id = request.POST.get("parent")
         if parent_id:
             parent = get_object_or_404(Comment, pk=parent_id, post=post, parent__isnull=True)
             comment.parent = parent
         comment.save()
-        messages.success(request, "Comment posted.")
+        if comment.is_approved:
+            messages.success(request, "Comment posted.")
+        else:
+            messages.success(request, "Comment submitted for review.")
     return redirect(post.get_absolute_url())
+
+
+@login_required
+def toggle_follow(request, username):
+    author = get_object_or_404(User, username=username)
+    if author.pk == request.user.pk:
+        messages.error(request, "You cannot follow yourself.")
+        return redirect("blog:author", username=username)
+    follow, created = AuthorFollow.objects.get_or_create(follower=request.user, author=author)
+    if not created:
+        follow.delete()
+        messages.info(request, f"Unfollowed {author.username}.")
+    else:
+        messages.success(request, f"Following {author.username}.")
+    next_url = request.POST.get("next") or request.GET.get("next")
+    if next_url:
+        return redirect(next_url)
+    return redirect("blog:author", username=username)
+
+
+def newsletter_subscribe(request):
+    if request.method != "POST":
+        return redirect("blog:home")
+    form = NewsletterForm(request.POST)
+    if form.is_valid():
+        _, state = subscribe_newsletter(form.cleaned_data["email"], request)
+        if state == "already":
+            messages.info(request, "You are already subscribed.")
+        else:
+            messages.success(request, "Check your email to confirm the subscription.")
+    else:
+        messages.error(request, "Enter a valid email address.")
+    return redirect(request.POST.get("next") or "blog:home")
+
+
+def newsletter_confirm(request, token):
+    sub = confirm_subscriber(token)
+    if sub:
+        messages.success(request, "You are subscribed to the Ledger newsletter.")
+    else:
+        messages.error(request, "Invalid or expired confirmation link.")
+    return redirect("blog:home")
+
+
+def newsletter_unsubscribe(request, token):
+    sub = unsubscribe(token)
+    if sub:
+        messages.info(request, "You have been unsubscribed.")
+    else:
+        messages.error(request, "Invalid unsubscribe link.")
+    return redirect("blog:home")
+
+
+@login_required
+def moderate_comment(request, comment_id):
+    comment = get_object_or_404(
+        Comment.objects.select_related("post"),
+        pk=comment_id,
+        post__author=request.user,
+        is_deleted=False,
+    )
+    action = request.POST.get("action")
+    if action == "approve":
+        comment.is_approved = True
+        comment.save(update_fields=["is_approved", "updated_at"])
+        messages.success(request, "Comment approved.")
+    elif action == "reject":
+        comment.is_deleted = True
+        comment.save(update_fields=["is_deleted", "updated_at"])
+        messages.info(request, "Comment rejected.")
+    return redirect(request.POST.get("next") or "blog:dashboard")
+
+
+@login_required
+def series_create(request):
+    form = SeriesForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        series = form.save(commit=False)
+        series.author = request.user
+        series.save()
+        messages.success(request, "Series created.")
+        return redirect(series.get_absolute_url())
+    return redirect("blog:dashboard")
 
 
 class BlogLoginView(LoginView):

@@ -1,0 +1,25 @@
+<div class="share" data-url="{{ absolute_url }}">
+  <p class="eyebrow">Share</p>
+  <div class="share-actions">
+    <button type="button" class="btn ghost share-copy" data-url="{{ absolute_url }}">Copy link</button>
+    <a class="btn ghost" target="_blank" rel="noopener"
+       href="https://twitter.com/intent/tweet?url={{ absolute_url|urlencode }}&text={{ post.title|urlencode }}">X</a>
+    <a class="btn ghost" target="_blank" rel="noopener"
+       href="https://www.linkedin.com/sharing/share-offsite/?url={{ absolute_url|urlencode }}">LinkedIn</a>
+  </div>
+</div>
+<script>
+  document.querySelectorAll(".share-copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var url = btn.getAttribute("data-url");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () {
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = "Copy link"; }, 1500);
+        });
+      } else {
+        window.prompt("Copy link", url);
+      }
+    });
+  });
+</script>

@@ -30,13 +30,14 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "product",
-    "blog",
+    "blog.apps.BlogConfig",
 ]
 
 AUTH_USER_MODEL = "product.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -120,12 +121,56 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "/static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+# Vite production build lands in frontend/dist (copied/linked for WhiteNoise).
+_FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+STATICFILES_DIRS = [p for p in [BASE_DIR / "static", _FRONTEND_DIST] if p.exists()]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+if _FRONTEND_DIST.exists():
+    WHITENOISE_ROOT = str(_FRONTEND_DIST)
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"
+        if not DEBUG
+        else "django.contrib.staticfiles.storage.StaticFilesStorage"
+    },
+}
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email: set EMAIL_HOST to use real SMTP; otherwise console (dev).
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@ledger.local")
+SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000")
+FRONTEND_URL = os.environ.get("FRONTEND_URL") or (
+    SITE_URL if not DEBUG else "http://127.0.0.1:5173"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+if EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = EMAIL_HOST
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
+    EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() == "true"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# When True (or frontend/dist exists in production), Django serves the React SPA at /
+SERVE_SPA = os.environ.get("SERVE_SPA", "false").lower() == "true" or (
+    not DEBUG and _FRONTEND_DIST.exists()
+)
+
+CORS_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",")
+    if o.strip()
+]
+if not DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = False

@@ -1,0 +1,24 @@
+{% if pending_comments %}
+  <section class="moderation">
+    <h2>Pending comments</h2>
+    <ul class="mod-list">
+      {% for comment in pending_comments %}
+        <li>
+          <p>
+            <strong>{{ comment.author }}</strong> on
+            <a href="{{ comment.post.get_absolute_url }}">{{ comment.post.title }}</a>
+          </p>
+          <p>{{ comment.body }}</p>
+          <form method="post" action="{% url 'blog:moderate-comment' comment.id %}" class="inline-forms">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'blog:dashboard' %}">
+            <button class="btn" name="action" value="approve" type="submit">Approve</button>
+            <button class="btn ghost" name="action" value="reject" type="submit">Reject</button>
+          </form>
+        </li>
+      {% empty %}
+        <li class="empty">No comments waiting.</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

@@ -4,6 +4,17 @@
   <section class="hero compact">
     <h1>{{ heading }}</h1>
     <p class="lede">{{ subheading }}</p>
+    {% if profile_author %}
+      <p class="meta">{{ follower_count }} follower{{ follower_count|pluralize }}</p>
+      {% if user.is_authenticated and user != profile_author %}
+        <form method="post" action="{% url 'blog:follow' profile_author.username %}" class="inline-forms">
+          {% csrf_token %}
+          <button class="btn" type="submit">
+            {% if is_following_author %}Unfollow{% else %}Follow{% endif %}
+          </button>
+        </form>
+      {% endif %}
+    {% endif %}
   </section>
   <div class="grid full">
     {% for post in posts %}

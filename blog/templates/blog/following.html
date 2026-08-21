@@ -1,0 +1,16 @@
+{% extends "blog/base.html" %}
+{% block title %}Following — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Following</h1>
+    <p class="lede">New work from authors you follow.</p>
+  </section>
+  <div class="grid full">
+    {% for post in posts %}
+      {% include "blog/_card.html" %}
+    {% empty %}
+      <p class="empty">Follow authors to fill this feed.</p>
+    {% endfor %}
+  </div>
+  {% include "blog/_pagination.html" %}
+{% endblock %}

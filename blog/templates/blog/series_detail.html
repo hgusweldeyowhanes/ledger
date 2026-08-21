@@ -1,0 +1,21 @@
+{% extends "blog/base.html" %}
+{% block title %}{{ series.title }} — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <p class="eyebrow">Series</p>
+    <h1>{{ series.title }}</h1>
+    <p class="lede">{{ series.description }}</p>
+    <p class="meta">by <a href="{% url 'blog:author' series.author.username %}">{{ series.author.username }}</a></p>
+  </section>
+  <ol class="series-parts">
+    {% for m in memberships %}
+      <li>
+        <span class="meta">Part {{ m.position }}</span>
+        <a href="{{ m.post.get_absolute_url }}">{{ m.post.title }}</a>
+        {% if not m.post.is_live %}<span class="draft-badge">{{ m.post.get_status_display }}</span>{% endif %}
+      </li>
+    {% empty %}
+      <li class="empty">No posts in this series yet.</li>
+    {% endfor %}
+  </ol>
+{% endblock %}

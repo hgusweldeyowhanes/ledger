@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
-from .models import Comment, Post
+from .models import Comment, NewsletterSubscriber, Post, Series
 
 User = get_user_model()
 
@@ -12,6 +12,12 @@ class PostForm(forms.ModelForm):
         help_text="Comma-separated tags",
         widget=forms.TextInput(attrs={"placeholder": "django, ethiopia, backend"}),
     )
+    series = forms.ModelChoiceField(
+        queryset=Series.objects.none(),
+        required=False,
+        empty_label="No series",
+    )
+    series_position = forms.IntegerField(required=False, min_value=1, initial=1)
 
     class Meta:
         model = Post
@@ -31,6 +37,13 @@ class PostForm(forms.ModelForm):
             "content": forms.Textarea(attrs={"rows": 16}),
             "published_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is not None:
+            self.fields["series"].queryset = Series.objects.filter(author=user)
+        elif self.instance and self.instance.pk:
+            self.fields["series"].queryset = Series.objects.filter(author=self.instance.author)
 
 
 class CommentForm(forms.ModelForm):
@@ -64,3 +77,21 @@ class RegisterForm(forms.ModelForm):
         if commit:
             user.save()
         return user
+
+
+class NewsletterForm(forms.ModelForm):
+    class Meta:
+        model = NewsletterSubscriber
+        fields = ("email",)
+        widgets = {
+            "email": forms.EmailInput(attrs={"placeholder": "you@example.com"}),
+        }
+
+
+class SeriesForm(forms.ModelForm):
+    class Meta:
+        model = Series
+        fields = ("title", "description", "cover_image")
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+        }
