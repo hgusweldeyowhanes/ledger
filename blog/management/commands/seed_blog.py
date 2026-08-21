@@ -2,7 +2,18 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from blog.models import Category, Post, Tag
+from blog.models import (
+    AuthorFollow,
+    Category,
+    Comment,
+    NewsletterSubscriber,
+    Notification,
+    Post,
+    Series,
+    SeriesMembership,
+    Tag,
+)
+from blog.services import confirm_subscriber
 
 User = get_user_model()
 
@@ -63,7 +74,7 @@ Charge a setup fee. Collect the monthly fee in Telebirr. Expand later.
 
 
 class Command(BaseCommand):
-    help = "Create a demo author, categories, tags, and published posts."
+    help = "Create a demo author, categories, tags, series, follows, and published posts."
 
     def handle(self, *args, **options):
         extra = {}
@@ -82,12 +93,22 @@ class Command(BaseCommand):
             user.name = extra["name"]
             user.save(update_fields=["name"])
 
+        reader_extra = {"name": "Reader"} if "name" in {f.name for f in User._meta.get_fields()} else {}
+        reader, reader_created = User.objects.get_or_create(
+            username="reader",
+            defaults={"email": "reader@example.com", **reader_extra},
+        )
+        if reader_created or not reader.has_usable_password():
+            reader.set_password("ledger12345")
+            reader.save()
+
         cat_map = {}
         for name in ["Engineering", "Security", "Business"]:
             cat_map[name], _ = Category.objects.get_or_create(name=name)
 
+        posts = []
         for spec in POSTS:
-            post, made = Post.objects.update_or_create(
+            post, _ = Post.objects.update_or_create(
                 title=spec["title"],
                 defaults={
                     "author": user,
@@ -105,5 +126,41 @@ class Command(BaseCommand):
                 tag, _ = Tag.objects.get_or_create(name=t)
                 tags.append(tag)
             post.tags.set(tags)
+            posts.append(post)
 
-        self.stdout.write(self.style.SUCCESS("Seeded Ledger. Login: hgus / ledger12345"))
+        series, _ = Series.objects.update_or_create(
+            slug="shipping-from-addis",
+            defaults={
+                "title": "Shipping from Addis",
+                "description": "Product lessons for builders in Ethiopia.",
+                "author": user,
+            },
+        )
+        SeriesMembership.objects.filter(series=series).delete()
+        for i, post in enumerate(posts[:2], start=1):
+            SeriesMembership.objects.create(series=series, post=post, position=i)
+
+        AuthorFollow.objects.get_or_create(follower=reader, author=user)
+        Notification.objects.get_or_create(
+            recipient=user,
+            actor=reader,
+            verb=Notification.Verb.FOLLOWED,
+            defaults={"is_read": False},
+        )
+
+        Comment.objects.filter(post=posts[0], author=reader, body="Pending review sample").delete()
+        Comment.objects.create(
+            post=posts[0],
+            author=reader,
+            body="Pending review sample",
+            is_approved=False,
+        )
+
+        sub, _ = NewsletterSubscriber.objects.get_or_create(email="demo@example.com")
+        confirm_subscriber(sub.confirm_token)
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                "Seeded Ledger. Login: hgus / ledger12345 (also reader / ledger12345)"
+            )
+        )

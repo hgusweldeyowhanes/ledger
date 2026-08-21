@@ -1,3 +1,5 @@
+import secrets
+
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
@@ -9,6 +11,14 @@ from .managers import PostManager
 
 def cover_upload_to(instance, filename):
     return f"blog/covers/{instance.slug or 'draft'}/{filename}"
+
+
+def series_cover_upload_to(instance, filename):
+    return f"blog/series/{instance.slug or 'draft'}/{filename}"
+
+
+def _token():
+    return secrets.token_urlsafe(32)
 
 
 class TimeStampedModel(models.Model):
@@ -141,6 +151,9 @@ class Post(TimeStampedModel):
             .distinct()[:limit]
         )
 
+    def series_membership(self):
+        return self.series_memberships.select_related("series").order_by("position").first()
+
     def __str__(self):
         return self.title
 
@@ -160,7 +173,7 @@ class Comment(TimeStampedModel):
         related_name="replies",
     )
     body = models.TextField(max_length=2000)
-    is_approved = models.BooleanField(default=True)
+    is_approved = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False)
 
     class Meta:
@@ -193,3 +206,124 @@ class Bookmark(TimeStampedModel):
     class Meta:
         unique_together = ("post", "user")
         ordering = ["-created_at"]
+
+
+class NewsletterSubscriber(TimeStampedModel):
+    email = models.EmailField(unique=True)
+    is_active = models.BooleanField(default=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirm_token = models.CharField(max_length=64, unique=True, default=_token, editable=False)
+    unsubscribe_token = models.CharField(max_length=64, unique=True, default=_token, editable=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.email
+
+
+class AuthorFollow(TimeStampedModel):
+    follower = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="following_authors",
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="followers",
+    )
+
+    class Meta:
+        unique_together = ("follower", "author")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.follower} → {self.author}"
+
+
+class Series(TimeStampedModel):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    description = models.TextField(blank=True)
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blog_series",
+    )
+    cover_image = models.ImageField(upload_to=series_cover_upload_to, blank=True, null=True)
+    posts = models.ManyToManyField(Post, through="SeriesMembership", related_name="series_set", blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        verbose_name_plural = "series"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title) or "series"
+            slug = base
+            n = 2
+            while Series.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base}-{n}"
+                n += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        return reverse("blog:series-detail", kwargs={"slug": self.slug})
+
+    def ordered_posts(self):
+        return (
+            Post.objects.published()
+            .filter(series_memberships__series=self)
+            .order_by("series_memberships__position")
+        )
+
+    def __str__(self):
+        return self.title
+
+
+class SeriesMembership(models.Model):
+    series = models.ForeignKey(Series, on_delete=models.CASCADE, related_name="memberships")
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="series_memberships")
+    position = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        ordering = ["position"]
+        unique_together = (("series", "post"), ("series", "position"))
+
+    def __str__(self):
+        return f"{self.series}: {self.position}. {self.post}"
+
+
+class Notification(TimeStampedModel):
+    class Verb(models.TextChoices):
+        LIKED = "liked", "Liked"
+        COMMENTED = "commented", "Commented"
+        FOLLOWED = "followed", "Followed"
+        COMMENT_APPROVED = "comment_approved", "Comment approved"
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="actions_notified",
+        null=True,
+        blank=True,
+    )
+    verb = models.CharField(max_length=32, choices=Verb.choices)
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications")
+    comment = models.ForeignKey(
+        Comment, on_delete=models.CASCADE, null=True, blank=True, related_name="notifications"
+    )
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.verb} → {self.recipient}"

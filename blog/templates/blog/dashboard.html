@@ -3,9 +3,12 @@
 {% block content %}
   <section class="hero compact">
     <h1>Studio</h1>
-    <p class="lede">Your drafts, published work, and saved essays.</p>
+    <p class="lede">Your drafts, published work, moderation queue, and series.</p>
     <p><a class="btn" href="{% url 'blog:post-create' %}">Write</a></p>
   </section>
+
+  {% include "blog/_moderation.html" %}
+
   <h2>Your posts</h2>
   <table class="table">
     <thead><tr><th>Title</th><th>Status</th><th>Views</th><th></th></tr></thead>
@@ -22,6 +25,22 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <h2>Your series</h2>
+  <ul class="series-index">
+    {% for s in series_list %}
+      <li><a href="{{ s.get_absolute_url }}">{{ s.title }}</a></li>
+    {% empty %}
+      <li class="empty">No series yet.</li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{% url 'blog:series-create' %}" class="stack series-create">
+    {% csrf_token %}
+    <h3>New series</h3>
+    {{ series_form.as_p }}
+    <button class="btn" type="submit">Create series</button>
+  </form>
+
   <h2>Saved</h2>
   <div class="grid">
     {% for post in bookmarks %}

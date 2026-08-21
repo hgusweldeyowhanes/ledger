@@ -1,0 +1,28 @@
+{% extends "blog/base.html" %}
+{% block title %}Notifications — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Notifications</h1>
+    <p class="lede">Likes, comments, follows, and approvals.</p>
+    <p><a class="btn ghost" href="{% url 'blog:notifications' %}?mark=all">Mark all read</a></p>
+  </section>
+  <ul class="notif-list">
+    {% for n in notifications %}
+      <li class="{% if not n.is_read %}unread{% endif %}">
+        <strong>{% if n.actor %}{{ n.actor.username }}{% else %}Ledger{% endif %}</strong>
+        {% if n.verb == "liked" %}liked your post
+        {% elif n.verb == "commented" %}commented on your post
+        {% elif n.verb == "followed" %}followed you
+        {% elif n.verb == "comment_approved" %}approved your comment
+        {% else %}{{ n.get_verb_display }}{% endif %}
+        {% if n.post %}
+          · <a href="{{ n.post.get_absolute_url }}">{{ n.post.title }}</a>
+        {% endif %}
+        <time>{{ n.created_at|timesince }} ago</time>
+      </li>
+    {% empty %}
+      <li class="empty">No notifications yet.</li>
+    {% endfor %}
+  </ul>
+  {% include "blog/_pagination.html" %}
+{% endblock %}

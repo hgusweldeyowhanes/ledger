@@ -28,5 +28,9 @@ media/
 # Collected static
 staticfiles/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # Logs
 *.log

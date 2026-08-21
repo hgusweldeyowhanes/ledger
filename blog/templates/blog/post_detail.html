@@ -2,8 +2,21 @@
 {% load blog_extras %}
 {% block title %}{{ post.meta_title|default:post.title }}{% endblock %}
 {% block meta_description %}{{ post.meta_description }}{% endblock %}
+{% block extra_head %}
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{ post.meta_title|default:post.title }}">
+  <meta property="og:description" content="{{ post.meta_description }}">
+  <meta property="og:url" content="{{ absolute_url }}">
+  {% if cover_absolute %}
+    <meta property="og:image" content="{{ cover_absolute }}">
+  {% endif %}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ post.meta_title|default:post.title }}">
+  <meta name="twitter:description" content="{{ post.meta_description }}">
+{% endblock %}
 {% block content %}
   <article class="article">
+    {% include "blog/_series_nav.html" %}
     <header>
       <p class="cats">
         {% for c in post.categories.all %}
@@ -19,8 +32,22 @@
         · {{ post.view_count }} views
         {% if not post.is_live %}<span class="draft-badge">{{ post.get_status_display }}</span>{% endif %}
       </p>
+      {% if user.is_authenticated and user != post.author %}
+        <form method="post" action="{% url 'blog:follow' post.author.username %}" class="inline-forms">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ post.get_absolute_url }}">
+          <button class="btn ghost" type="submit">
+            {% if is_following_author %}Unfollow{% else %}Follow{% endif %} {{ post.author.username }}
+          </button>
+        </form>
+      {% endif %}
       {% if user == post.author or user.is_staff %}
-        <p><a class="btn ghost" href="{% url 'blog:post-edit' post.slug %}">Edit</a></p>
+        <p>
+          <a class="btn ghost" href="{% url 'blog:post-edit' post.slug %}">Edit</a>
+          {% if pending_comments %}
+            <span class="meta">{{ pending_comments }} pending comment{{ pending_comments|pluralize }}</span>
+          {% endif %}
+        </p>
       {% endif %}
     </header>
     {% if post.cover_image %}
@@ -44,6 +71,7 @@
         <p class="meta"><a href="{% url 'blog:login' %}">Log in</a> to like or comment.</p>
       {% endif %}
     </div>
+    {% include "blog/_share.html" %}
   </article>
 
   {% if related %}

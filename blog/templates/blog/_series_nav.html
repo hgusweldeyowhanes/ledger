@@ -1,0 +1,15 @@
+{% if series %}
+  <aside class="series-nav">
+    <p class="eyebrow">Series</p>
+    <h3><a href="{{ series.get_absolute_url }}">{{ series.title }}</a></h3>
+    <p class="meta">Part {{ series_membership.position }}</p>
+    <div class="series-links">
+      {% if series_prev %}
+        <a href="{{ series_prev.get_absolute_url }}">← {{ series_prev.title }}</a>
+      {% endif %}
+      {% if series_next %}
+        <a href="{{ series_next.get_absolute_url }}">{{ series_next.title }} →</a>
+      {% endif %}
+    </div>
+  </aside>
+{% endif %}

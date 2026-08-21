@@ -1,0 +1,22 @@
+{% extends "blog/base.html" %}
+{% block title %}Series — Ledger{% endblock %}
+{% block content %}
+  <section class="hero compact">
+    <h1>Series</h1>
+    <p class="lede">Multi-part essays, collected.</p>
+  </section>
+  <div class="grid full">
+    {% for s in series_list %}
+      <article class="card">
+        <div class="card-body">
+          <p class="meta">{{ s.author.username }} · {{ s.post_count }} part{{ s.post_count|pluralize }}</p>
+          <h2><a href="{{ s.get_absolute_url }}">{{ s.title }}</a></h2>
+          <p>{{ s.description|truncatewords:28 }}</p>
+        </div>
+      </article>
+    {% empty %}
+      <p class="empty">No series yet.</p>
+    {% endfor %}
+  </div>
+  {% include "blog/_pagination.html" %}
+{% endblock %}

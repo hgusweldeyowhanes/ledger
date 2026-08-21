@@ -1,7 +1,19 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Bookmark, Category, Comment, Post, PostLike, Tag
+from .models import (
+    AuthorFollow,
+    Bookmark,
+    Category,
+    Comment,
+    NewsletterSubscriber,
+    Notification,
+    Post,
+    PostLike,
+    Series,
+    SeriesMembership,
+    Tag,
+)
 
 
 @admin.register(Category)
@@ -30,6 +42,12 @@ class CommentInline(admin.TabularInline):
     extra = 0
     fields = ("author", "body", "parent", "is_approved", "is_deleted")
     readonly_fields = ("author",)
+
+
+class SeriesMembershipInline(admin.TabularInline):
+    model = SeriesMembership
+    extra = 0
+    autocomplete_fields = ("post",)
 
 
 @admin.register(Post)
@@ -68,7 +86,10 @@ class CommentAdmin(admin.ModelAdmin):
 
     @admin.action(description="Approve selected comments")
     def approve_comments(self, request, queryset):
-        queryset.update(is_approved=True)
+        for comment in queryset:
+            if not comment.is_approved:
+                comment.is_approved = True
+                comment.save(update_fields=["is_approved", "updated_at"])
 
 
 @admin.register(PostLike)
@@ -79,3 +100,33 @@ class PostLikeAdmin(admin.ModelAdmin):
 @admin.register(Bookmark)
 class BookmarkAdmin(admin.ModelAdmin):
     list_display = ("post", "user", "created_at")
+
+
+@admin.register(NewsletterSubscriber)
+class NewsletterSubscriberAdmin(admin.ModelAdmin):
+    list_display = ("email", "is_active", "confirmed_at", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("email",)
+    readonly_fields = ("confirm_token", "unsubscribe_token", "confirmed_at")
+
+
+@admin.register(AuthorFollow)
+class AuthorFollowAdmin(admin.ModelAdmin):
+    list_display = ("follower", "author", "created_at")
+    search_fields = ("follower__username", "author__username")
+
+
+@admin.register(Series)
+class SeriesAdmin(admin.ModelAdmin):
+    list_display = ("title", "author", "slug", "updated_at")
+    prepopulated_fields = {"slug": ("title",)}
+    search_fields = ("title", "description")
+    autocomplete_fields = ("author",)
+    inlines = [SeriesMembershipInline]
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("recipient", "actor", "verb", "is_read", "created_at")
+    list_filter = ("verb", "is_read")
+    search_fields = ("recipient__username", "actor__username")
