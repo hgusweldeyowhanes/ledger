@@ -12,6 +12,7 @@ from blog.models import (
     NewsletterSubscriber,
     Notification,
     Post,
+    PostRevision,
     Series,
     SeriesMembership,
 )
@@ -155,6 +156,75 @@ class BlogAPITests(APITestCase):
         self.assertEqual(approved.status_code, 200)
         self.assertTrue(approved.data["is_approved"])
 
+    def test_advanced_search_filters(self):
+        short = Post.objects.create(
+            title="Short read",
+            content="x " * 50,
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+        )
+        long = Post.objects.create(
+            title="Long read",
+            content="x " * 1200,
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+        )
+        self.assertGreater(long.reading_time, short.reading_time)
+        res = self.client.get("/api/posts/?min_reading_time=4")
+        self.assertEqual(res.status_code, 200)
+        titles = [row["title"] for row in res.data["results"]]
+        self.assertIn("Long read", titles)
+        self.assertNotIn("Short read", titles)
+
+    def test_post_revisions_and_rollback(self):
+        self.client.force_authenticate(self.author)
+        post = Post.objects.create(
+            title="Versioned",
+            content="v1 text",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+        )
+        patch = self.client.patch(
+            f"/api/posts/{post.slug}/",
+            {"title": "Versioned v2", "content": "v2 text"},
+            format="json",
+        )
+        self.assertEqual(patch.status_code, 200)
+        revs = self.client.get(f"/api/posts/{post.slug}/revisions/")
+        self.assertEqual(revs.status_code, 200)
+        self.assertGreaterEqual(len(revs.data["results"]), 1)
+        revision_id = revs.data["results"][0]["id"]
+        rollback = self.client.post(
+            f"/api/posts/{post.slug}/rollback/",
+            {"revision_id": revision_id},
+            format="json",
+        )
+        self.assertEqual(rollback.status_code, 200)
+        post.refresh_from_db()
+        self.assertEqual(post.title, "Versioned")
+        self.assertEqual(post.content, "v1 text")
+
+    def test_author_analytics_endpoint(self):
+        self.client.force_authenticate(self.author)
+        Post.objects.create(
+            title="A",
+            content="hello world",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            view_count=7,
+        )
+        Post.objects.create(
+            title="B",
+            content="hello " * 400,
+            author=self.author,
+            status=Post.Status.DRAFT,
+            view_count=3,
+        )
+        res = self.client.get("/api/posts/analytics/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["totals"]["posts"], 2)
+        self.assertEqual(res.data["totals"]["views"], 10)
+
 
 class SeriesAndNotificationTests(TestCase):
     def setUp(self):
@@ -255,3 +325,22 @@ class WebFeatureTests(TestCase):
         res = self.client.get(reverse("blog:home"))
         self.assertContains(res, "theme-toggle")
         self.assertContains(res, "ledger-theme")
+
+    def test_dashboard_shows_revision_history(self):
+        self.client.login(username="hgus", password="pass12345")
+        self.client.post(
+            reverse("blog:post-edit", kwargs={"slug": self.post.slug}),
+            {
+                "title": "Public note updated",
+                "excerpt": "Hello from Addis.",
+                "content": "Updated body",
+                "status": Post.Status.PUBLISHED,
+                "featured": False,
+                "allow_comments": True,
+                "published_at": "2026-01-01T10:00",
+            },
+        )
+        self.assertTrue(PostRevision.objects.filter(post=self.post).exists())
+        res = self.client.get(reverse("blog:dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Recent revisions")

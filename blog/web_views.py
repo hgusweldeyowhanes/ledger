@@ -16,12 +16,20 @@ from .models import (
     Comment,
     Notification,
     Post,
+    PostRevision,
     PostLike,
     Series,
     SeriesMembership,
     Tag,
 )
-from .services import comment_should_auto_approve, confirm_subscriber, subscribe_newsletter, unsubscribe
+from .services import (
+    comment_should_auto_approve,
+    confirm_subscriber,
+    create_post_revision,
+    restore_post_revision,
+    subscribe_newsletter,
+    unsubscribe,
+)
 
 User = get_user_model()
 
@@ -162,6 +170,11 @@ class SearchView(ListView):
 
     def get_queryset(self):
         q = self.request.GET.get("q", "").strip()
+        tag = self.request.GET.get("tag", "").strip()
+        category = self.request.GET.get("category", "").strip()
+        min_read = self.request.GET.get("min_reading_time", "").strip()
+        max_read = self.request.GET.get("max_reading_time", "").strip()
+        order = self.request.GET.get("order", "").strip() or "-published_at"
         qs = _annotated_posts(self.request.user).published()
         if q:
             qs = qs.filter(
@@ -170,6 +183,17 @@ class SearchView(ListView):
                 | Q(content__icontains=q)
                 | Q(tags__name__icontains=q)
             ).distinct()
+        if tag:
+            qs = qs.filter(tags__slug=tag)
+        if category:
+            qs = qs.filter(categories__slug=category)
+        if min_read.isdigit():
+            qs = qs.filter(reading_time__gte=int(min_read))
+        if max_read.isdigit():
+            qs = qs.filter(reading_time__lte=int(max_read))
+        allowed_orders = {"-published_at", "published_at", "-view_count", "-reading_time", "title"}
+        if order in allowed_orders:
+            qs = qs.order_by(order, "-created_at")
         return qs
 
     def get_context_data(self, **kwargs):
@@ -178,6 +202,13 @@ class SearchView(ListView):
         ctx["heading"] = "Search"
         ctx["subheading"] = f'Results for “{q}”' if q else "Type a keyword to search the archive"
         ctx["query"] = q
+        ctx["filter_tag"] = self.request.GET.get("tag", "").strip()
+        ctx["filter_category"] = self.request.GET.get("category", "").strip()
+        ctx["min_reading_time"] = self.request.GET.get("min_reading_time", "").strip()
+        ctx["max_reading_time"] = self.request.GET.get("max_reading_time", "").strip()
+        ctx["order"] = self.request.GET.get("order", "").strip() or "-published_at"
+        ctx["all_tags"] = Tag.objects.all()
+        ctx["all_categories"] = Category.objects.all()
         return ctx
 
 
@@ -247,6 +278,25 @@ class DashboardView(ListView):
         )
         ctx["series_list"] = Series.objects.filter(author=self.request.user)
         ctx["series_form"] = SeriesForm()
+        authored = Post.objects.filter(author=self.request.user, is_deleted=False)
+        published = authored.filter(status=Post.Status.PUBLISHED)
+        ctx["analytics"] = {
+            "total_posts": authored.count(),
+            "published_posts": published.count(),
+            "total_views": sum(authored.values_list("view_count", flat=True)),
+            "avg_reading_time": round(
+                sum(authored.values_list("reading_time", flat=True)) / max(1, authored.count()), 2
+            ),
+            "total_likes": PostLike.objects.filter(post__author=self.request.user).count(),
+            "total_comments": Comment.objects.filter(
+                post__author=self.request.user, is_approved=True, is_deleted=False
+            ).count(),
+        }
+        ctx["recent_revisions"] = (
+            PostRevision.objects.filter(post__author=self.request.user)
+            .select_related("post", "edited_by")
+            .order_by("-created_at")[:12]
+        )
         return ctx
 
 
@@ -306,6 +356,8 @@ def _save_post(request, instance=None):
         user=request.user,
     )
     if request.method == "POST" and form.is_valid():
+        if instance is not None:
+            create_post_revision(instance, edited_by=request.user)
         post = form.save(commit=False)
         post.author = request.user
         post.save()
@@ -332,7 +384,24 @@ def _save_post(request, instance=None):
         if membership:
             form.fields["series"].initial = membership.series_id
             form.fields["series_position"].initial = membership.position
-    return render(request, "blog/post_form.html", {"form": form, "editing": instance is not None})
+    context = {"form": form, "editing": instance is not None}
+    if instance is not None:
+        context["revisions"] = instance.revisions.select_related("edited_by")[:10]
+    return render(request, "blog/post_form.html", context)
+
+
+@login_required
+def rollback_post_revision(request, slug, revision_id):
+    post = get_object_or_404(Post, slug=slug, is_deleted=False)
+    if post.author != request.user and not request.user.is_staff:
+        return HttpResponseForbidden("You cannot edit this post.")
+    if request.method != "POST":
+        return redirect("blog:post-edit", slug=slug)
+    revision = get_object_or_404(PostRevision, pk=revision_id, post=post)
+    create_post_revision(post, edited_by=request.user)
+    restore_post_revision(post, revision)
+    messages.success(request, "Post reverted to selected revision.")
+    return redirect("blog:post-edit", slug=slug)
 
 
 @login_required
