@@ -1,8 +1,10 @@
+from datetime import datetime
+
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
 
-from .models import NewsletterSubscriber, Notification
+from .models import NewsletterSubscriber, Notification, PostRevision, SeriesMembership, Tag
 
 
 def comment_should_auto_approve(user, post):
@@ -19,6 +21,75 @@ def notify(*, recipient, actor, verb, post=None, comment=None):
         post=post,
         comment=comment,
     )
+
+
+def create_post_revision(post, edited_by=None):
+    snapshot = {
+        "status": post.status,
+        "featured": post.featured,
+        "allow_comments": post.allow_comments,
+        "published_at": post.published_at.isoformat() if post.published_at else None,
+        "category_ids": list(post.categories.values_list("id", flat=True)),
+        "tag_names": list(post.tags.values_list("name", flat=True)),
+        "series": None,
+    }
+    membership = post.series_membership()
+    if membership:
+        snapshot["series"] = {
+            "series_id": membership.series_id,
+            "position": membership.position,
+        }
+    return PostRevision.objects.create(
+        post=post,
+        edited_by=edited_by,
+        title=post.title,
+        excerpt=post.excerpt,
+        content=post.content,
+        meta_title=post.meta_title,
+        meta_description=post.meta_description,
+        snapshot=snapshot,
+    )
+
+
+def restore_post_revision(post, revision):
+    post.title = revision.title
+    post.excerpt = revision.excerpt
+    post.content = revision.content
+    post.meta_title = revision.meta_title
+    post.meta_description = revision.meta_description
+    post.status = revision.snapshot.get("status", post.status)
+    post.featured = revision.snapshot.get("featured", post.featured)
+    post.allow_comments = revision.snapshot.get("allow_comments", post.allow_comments)
+    published_at = revision.snapshot.get("published_at")
+    if published_at:
+        post.published_at = datetime.fromisoformat(published_at)
+        if timezone.is_naive(post.published_at):
+            post.published_at = timezone.make_aware(post.published_at, timezone.get_current_timezone())
+    post.save()
+
+    category_ids = revision.snapshot.get("category_ids")
+    if isinstance(category_ids, list):
+        post.categories.set(category_ids)
+
+    tag_names = revision.snapshot.get("tag_names")
+    if isinstance(tag_names, list):
+        tags = []
+        for name in tag_names:
+            if not str(name).strip():
+                continue
+            tag, _ = Tag.objects.get_or_create(name=str(name).strip())
+            tags.append(tag)
+        post.tags.set(tags)
+
+    SeriesMembership.objects.filter(post=post).delete()
+    series_info = revision.snapshot.get("series")
+    if isinstance(series_info, dict) and series_info.get("series_id"):
+        SeriesMembership.objects.create(
+            series_id=series_info["series_id"],
+            post=post,
+            position=max(1, int(series_info.get("position") or 1)),
+        )
+    return post
 
 
 def subscribe_newsletter(email, request=None):

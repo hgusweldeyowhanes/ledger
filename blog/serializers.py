@@ -8,6 +8,7 @@ from .models import (
     NewsletterSubscriber,
     Notification,
     Post,
+    PostRevision,
     Series,
     SeriesMembership,
     Tag,
@@ -317,3 +318,23 @@ class AuthorFollowSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuthorFollow
         fields = ("id", "author", "created_at")
+
+
+class PostRevisionSerializer(serializers.ModelSerializer):
+    edited_by = UserPublicSerializer(read_only=True)
+
+    class Meta:
+        model = PostRevision
+        fields = (
+            "id",
+            "post",
+            "edited_by",
+            "title",
+            "excerpt",
+            "content",
+            "meta_title",
+            "meta_description",
+            "snapshot",
+            "created_at",
+        )
+        read_only_fields = fields

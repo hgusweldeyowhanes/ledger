@@ -9,6 +9,16 @@
 
   {% include "blog/_moderation.html" %}
 
+  <h2>Analytics</h2>
+  <div class="grid full">
+    <article class="card"><h3>Total posts</h3><p>{{ analytics.total_posts }}</p></article>
+    <article class="card"><h3>Published</h3><p>{{ analytics.published_posts }}</p></article>
+    <article class="card"><h3>Total views</h3><p>{{ analytics.total_views }}</p></article>
+    <article class="card"><h3>Avg. read time</h3><p>{{ analytics.avg_reading_time }} min</p></article>
+    <article class="card"><h3>Total likes</h3><p>{{ analytics.total_likes }}</p></article>
+    <article class="card"><h3>Approved comments</h3><p>{{ analytics.total_comments }}</p></article>
+  </div>
+
   <h2>Your posts</h2>
   <table class="table">
     <thead><tr><th>Title</th><th>Status</th><th>Views</th><th></th></tr></thead>
@@ -49,4 +59,26 @@
       <p class="empty">Nothing saved yet.</p>
     {% endfor %}
   </div>
+
+  <h2>Recent revisions</h2>
+  <table class="table">
+    <thead><tr><th>Post</th><th>Editor</th><th>When</th><th></th></tr></thead>
+    <tbody>
+      {% for rev in recent_revisions %}
+        <tr>
+          <td><a href="{% url 'blog:post-edit' rev.post.slug %}">{{ rev.post.title }}</a></td>
+          <td>{% if rev.edited_by %}{{ rev.edited_by.username }}{% else %}system{% endif %}</td>
+          <td>{{ rev.created_at|date:"Y-m-d H:i" }}</td>
+          <td>
+            <form method="post" action="{% url 'blog:post-rollback' rev.post.slug rev.id %}" class="inline-forms">
+              {% csrf_token %}
+              <button class="btn" type="submit">Rollback</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No revisions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 {% endblock %}

@@ -327,3 +327,26 @@ class Notification(TimeStampedModel):
 
     def __str__(self):
         return f"{self.verb} → {self.recipient}"
+
+
+class PostRevision(TimeStampedModel):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="revisions")
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="post_revisions",
+    )
+    title = models.CharField(max_length=200)
+    excerpt = models.CharField(max_length=320, blank=True)
+    content = models.TextField()
+    meta_title = models.CharField(max_length=70, blank=True)
+    meta_description = models.CharField(max_length=160, blank=True)
+    snapshot = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Revision for {self.post} @ {self.created_at:%Y-%m-%d %H:%M}"

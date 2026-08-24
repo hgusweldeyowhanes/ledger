@@ -16,6 +16,33 @@
       {% endif %}
     {% endif %}
   </section>
+  {% if heading == "Search" %}
+    <form method="get" class="inline-forms stack" style="margin-bottom:1rem;">
+      <input type="text" name="q" value="{{ query }}" placeholder="Keyword">
+      <select name="category">
+        <option value="">All categories</option>
+        {% for c in all_categories %}
+          <option value="{{ c.slug }}" {% if filter_category == c.slug %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="tag">
+        <option value="">All tags</option>
+        {% for t in all_tags %}
+          <option value="{{ t.slug }}" {% if filter_tag == t.slug %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="number" name="min_reading_time" min="1" value="{{ min_reading_time }}" placeholder="Min min">
+      <input type="number" name="max_reading_time" min="1" value="{{ max_reading_time }}" placeholder="Max min">
+      <select name="order">
+        <option value="-published_at" {% if order == "-published_at" %}selected{% endif %}>Newest</option>
+        <option value="published_at" {% if order == "published_at" %}selected{% endif %}>Oldest</option>
+        <option value="-view_count" {% if order == "-view_count" %}selected{% endif %}>Most viewed</option>
+        <option value="-reading_time" {% if order == "-reading_time" %}selected{% endif %}>Longest read</option>
+        <option value="title" {% if order == "title" %}selected{% endif %}>Title A-Z</option>
+      </select>
+      <button class="btn" type="submit">Apply</button>
+    </form>
+  {% endif %}
   <div class="grid full">
     {% for post in posts %}
       {% include "blog/_card.html" %}

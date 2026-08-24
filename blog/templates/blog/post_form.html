@@ -9,4 +9,27 @@
     {{ form.as_p }}
     <button class="btn" type="submit">Save</button>
   </form>
+  {% if editing %}
+    <h2>Revision history</h2>
+    <table class="table">
+      <thead><tr><th>When</th><th>Editor</th><th>Title snapshot</th><th></th></tr></thead>
+      <tbody>
+        {% for rev in revisions %}
+          <tr>
+            <td>{{ rev.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{% if rev.edited_by %}{{ rev.edited_by.username }}{% else %}system{% endif %}</td>
+            <td>{{ rev.title }}</td>
+            <td>
+              <form method="post" action="{% url 'blog:post-rollback' form.instance.slug rev.id %}" class="inline-forms">
+                {% csrf_token %}
+                <button class="btn" type="submit">Rollback</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">No revisions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
 {% endblock %}

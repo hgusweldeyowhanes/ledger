@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Avg, Sum
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -17,6 +18,7 @@ from .models import (
     Comment,
     Notification,
     Post,
+    PostRevision,
     PostLike,
     Series,
     Tag,
@@ -32,10 +34,17 @@ from .serializers import (
     SeriesSerializer,
     SeriesWriteSerializer,
     TagSerializer,
+    PostRevisionSerializer,
     UserPublicSerializer,
     UserRegistrationSerializer,
 )
-from .services import confirm_subscriber, subscribe_newsletter, unsubscribe
+from .services import (
+    confirm_subscriber,
+    create_post_revision,
+    restore_post_revision,
+    subscribe_newsletter,
+    unsubscribe,
+)
 
 User = get_user_model()
 
@@ -95,6 +104,25 @@ class PostViewSet(viewsets.ModelViewSet):
                 ),
             )
         )
+        qp = self.request.query_params
+        min_read = qp.get("min_reading_time")
+        max_read = qp.get("max_reading_time")
+        published_after = qp.get("published_after")
+        published_before = qp.get("published_before")
+        has_cover = qp.get("has_cover")
+
+        if min_read and str(min_read).isdigit():
+            qs = qs.filter(reading_time__gte=int(min_read))
+        if max_read and str(max_read).isdigit():
+            qs = qs.filter(reading_time__lte=int(max_read))
+        if published_after:
+            qs = qs.filter(published_at__date__gte=published_after)
+        if published_before:
+            qs = qs.filter(published_at__date__lte=published_before)
+        if has_cover in {"true", "1"}:
+            qs = qs.exclude(cover_image__isnull=True).exclude(cover_image="")
+        elif has_cover in {"false", "0"}:
+            qs = qs.filter(Q(cover_image__isnull=True) | Q(cover_image=""))
         return qs.distinct().order_by("-published_at", "-created_at")
 
     def get_serializer_class(self):
@@ -104,6 +132,11 @@ class PostViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+    def perform_update(self, serializer):
+        post = self.get_object()
+        create_post_revision(post, edited_by=self.request.user)
+        serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -170,6 +203,63 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(qs)
         serializer = PostListSerializer(page, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def analytics(self, request):
+        posts = Post.objects.filter(author=request.user, is_deleted=False)
+        published = posts.filter(status=Post.Status.PUBLISHED, published_at__lte=timezone.now())
+        totals = posts.aggregate(
+            total_posts=Count("id"),
+            total_views=Sum("view_count"),
+            avg_reading_time=Avg("reading_time"),
+        )
+        top_posts = (
+            published.annotate(
+                likes_count=Count("likes", distinct=True),
+                comments_count=Count(
+                    "comments",
+                    filter=Q(comments__is_approved=True, comments__is_deleted=False),
+                    distinct=True,
+                ),
+            )
+            .order_by("-view_count", "-likes_count")[:5]
+        )
+        return Response(
+            {
+                "totals": {
+                    "posts": totals["total_posts"] or 0,
+                    "published_posts": published.count(),
+                    "views": totals["total_views"] or 0,
+                    "avg_reading_time": round(float(totals["avg_reading_time"] or 0), 2),
+                },
+                "top_posts": PostListSerializer(
+                    top_posts, many=True, context={"request": request}
+                ).data,
+            }
+        )
+
+    @action(detail=True, methods=["get"], permission_classes=[permissions.IsAuthenticated])
+    def revisions(self, request, slug=None):
+        post = self.get_object()
+        if post.author_id != request.user.pk and not request.user.is_staff:
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        rows = PostRevision.objects.filter(post=post).select_related("edited_by")
+        page = self.paginate_queryset(rows)
+        serializer = PostRevisionSerializer(page, many=True, context={"request": request})
+        return self.get_paginated_response(serializer.data)
+
+    @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def rollback(self, request, slug=None):
+        post = self.get_object()
+        if post.author_id != request.user.pk and not request.user.is_staff:
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        revision_id = request.data.get("revision_id")
+        if not revision_id:
+            return Response({"detail": "revision_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        revision = get_object_or_404(PostRevision, pk=revision_id, post=post)
+        create_post_revision(post, edited_by=request.user)
+        restore_post_revision(post, revision)
+        return Response(self.get_serializer(post).data)
 
 
 class CommentViewSet(mixins.CreateModelMixin, mixins.DestroyModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet):

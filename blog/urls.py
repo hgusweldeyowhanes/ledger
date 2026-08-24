@@ -34,6 +34,11 @@ urlpatterns = [
     path("post/<slug:slug>/bookmark/", web_views.toggle_bookmark, name="bookmark"),
     path("post/<slug:slug>/comment/", web_views.add_comment, name="comment"),
     path("post/<slug:slug>/edit/", web_views.post_edit, name="post-edit"),
+    path(
+        "post/<slug:slug>/revisions/<int:revision_id>/rollback/",
+        web_views.rollback_post_revision,
+        name="post-rollback",
+    ),
     path("post/<slug:slug>/", web_views.PostDetailView.as_view(), name="post-detail"),
     path("comments/<int:comment_id>/moderate/", web_views.moderate_comment, name="moderate-comment"),
 ]
