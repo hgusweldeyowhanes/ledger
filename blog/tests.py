@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -203,6 +204,28 @@ class BlogAPITests(APITestCase):
         post.refresh_from_db()
         self.assertEqual(post.title, "Versioned")
         self.assertEqual(post.content, "v1 text")
+
+    def test_trending_posts_endpoint_returns_posts_by_views(self):
+        now = timezone.now()
+        one = Post.objects.create(
+            title="Top story",
+            content="hello world",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            published_at=now,
+            view_count=12,
+        )
+        two = Post.objects.create(
+            title="Second story",
+            content="hello world again",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            published_at=now,
+            view_count=8,
+        )
+        res = self.client.get("/api/posts/trending/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([row["title"] for row in res.data["results"]], [one.title, two.title])
 
     def test_author_analytics_endpoint(self):
         self.client.force_authenticate(self.author)
