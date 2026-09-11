@@ -126,7 +126,7 @@ class PostViewSet(viewsets.ModelViewSet):
         return qs.distinct().order_by("-published_at", "-created_at")
 
     def get_serializer_class(self):
-        if self.action == "list":
+        if self.action in {"list", "trending"}:
             return PostListSerializer
         return PostDetailSerializer
 
@@ -154,6 +154,16 @@ class PostViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         instance.is_deleted = True
         instance.save(update_fields=["is_deleted", "updated_at"])
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.AllowAny])
+    def trending(self, request):
+        qs = self.get_queryset().order_by("-view_count", "-published_at")
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def publish(self, request, slug=None):
