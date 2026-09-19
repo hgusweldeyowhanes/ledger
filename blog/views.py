@@ -126,7 +126,7 @@ class PostViewSet(viewsets.ModelViewSet):
         return qs.distinct().order_by("-published_at", "-created_at")
 
     def get_serializer_class(self):
-        if self.action in {"list", "trending"}:
+        if self.action in {"list", "trending", "popular"}:
             return PostListSerializer
         return PostDetailSerializer
 
@@ -158,6 +158,16 @@ class PostViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], permission_classes=[permissions.AllowAny])
     def trending(self, request):
         qs = self.get_queryset().order_by("-view_count", "-published_at")
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], permission_classes=[permissions.AllowAny])
+    def popular(self, request):
+        qs = self.get_queryset().order_by("-likes_count", "-view_count", "-published_at")
         page = self.paginate_queryset(qs)
         if page is not None:
             serializer = self.get_serializer(page, many=True)

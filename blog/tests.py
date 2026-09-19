@@ -13,6 +13,7 @@ from blog.models import (
     NewsletterSubscriber,
     Notification,
     Post,
+    PostLike,
     PostRevision,
     Series,
     SeriesMembership,

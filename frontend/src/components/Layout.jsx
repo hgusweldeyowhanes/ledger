@@ -37,6 +37,7 @@ export default function Layout() {
         <nav className="nav">
           <NavLink to="/series">Series</NavLink>
           <NavLink to="/trending">Trending</NavLink>
+          <NavLink to="/popular">Popular</NavLink>
           {isAuth ? <NavLink to="/following">Following</NavLink> : null}
         </nav>
         <form className="search" onSubmit={onSearch}>

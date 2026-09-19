@@ -14,6 +14,7 @@ import Register from "./pages/Register";
 import Search from "./pages/Search";
 import SeriesDetail from "./pages/SeriesDetail";
 import SeriesList from "./pages/SeriesList";
+import Popular from "./pages/Popular";
 import Studio from "./pages/Studio";
 import Trending from "./pages/Trending";
 import Write from "./pages/Write";
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="series/:slug" element={<SeriesDetail />} />
               <Route path="following" element={<Following />} />
               <Route path="trending" element={<Trending />} />
+              <Route path="popular" element={<Popular />} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="studio" element={<Studio />} />
               <Route path="write" element={<Write />} />

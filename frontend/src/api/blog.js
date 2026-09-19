@@ -20,6 +20,7 @@ export const blogApi = {
   saved: () => api("/api/posts/saved/"),
   followingFeed: () => api("/api/feed/following/"),
   trending: () => api("/api/posts/trending/", { auth: false }),
+  popular: () => api("/api/posts/popular/", { auth: false }),
   categories: () => api("/api/categories/", { auth: false }),
   seriesList: () => api("/api/series/", { auth: false }),
   series: (slug) => api(`/api/series/${slug}/`, { auth: false }),
