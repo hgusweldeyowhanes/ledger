@@ -15,6 +15,7 @@ import Search from "./pages/Search";
 import SeriesDetail from "./pages/SeriesDetail";
 import SeriesList from "./pages/SeriesList";
 import Studio from "./pages/Studio";
+import Trending from "./pages/Trending";
 import Write from "./pages/Write";
 import "./styles/ledger.css";
 
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="series" element={<SeriesList />} />
               <Route path="series/:slug" element={<SeriesDetail />} />
               <Route path="following" element={<Following />} />
+              <Route path="trending" element={<Trending />} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="studio" element={<Studio />} />
               <Route path="write" element={<Write />} />

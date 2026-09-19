@@ -19,6 +19,7 @@ export const blogApi = {
   mine: () => api("/api/posts/mine/"),
   saved: () => api("/api/posts/saved/"),
   followingFeed: () => api("/api/feed/following/"),
+  trending: () => api("/api/posts/trending/", { auth: false }),
   categories: () => api("/api/categories/", { auth: false }),
   seriesList: () => api("/api/series/", { auth: false }),
   series: (slug) => api(`/api/series/${slug}/`, { auth: false }),
