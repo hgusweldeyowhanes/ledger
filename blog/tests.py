@@ -227,6 +227,32 @@ class BlogAPITests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual([row["title"] for row in res.data["results"]], [one.title, two.title])
 
+    def test_popular_posts_endpoint_returns_posts_by_likes(self):
+        now = timezone.now()
+        first = Post.objects.create(
+            title="Most liked story",
+            content="hello world",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            published_at=now,
+            view_count=5,
+        )
+        second = Post.objects.create(
+            title="Popular but less liked",
+            content="hello world again",
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            published_at=now,
+            view_count=15,
+        )
+        PostLike.objects.create(post=first, user=self.other)
+        PostLike.objects.create(post=first, user=make_user("reader2"))
+        PostLike.objects.create(post=second, user=self.other)
+
+        res = self.client.get("/api/posts/popular/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([row["title"] for row in res.data["results"]], [first.title, second.title])
+
     def test_author_analytics_endpoint(self):
         self.client.force_authenticate(self.author)
         Post.objects.create(
