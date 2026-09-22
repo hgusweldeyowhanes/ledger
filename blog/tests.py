@@ -367,3 +367,109 @@ class WebFeatureTests(TestCase):
         res = self.client.get(reverse("blog:dashboard"))
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, "Recent revisions")
+
+
+class AuthorAnalyticsAPITests(APITestCase):
+    def setUp(self):
+        self.author = make_user("writer_analytics")
+        self.reader = make_user("reader_analytics")
+        self.other_author = make_user("other_author")
+
+        self.category = Category.objects.create(name="Technology", color="#4caf50")
+
+        self.post_live = Post.objects.create(
+            title="Deep Learning Post",
+            content="words " * 200,
+            author=self.author,
+            status=Post.Status.PUBLISHED,
+            view_count=100,
+            reading_time=3,
+        )
+        self.post_live.categories.add(self.category)
+
+        self.post_draft = Post.objects.create(
+            title="Unpublished Notes",
+            content="draft notes",
+            author=self.author,
+            status=Post.Status.DRAFT,
+            view_count=5,
+            reading_time=2,
+        )
+
+        # Other author's post (must be excluded)
+        self.post_other = Post.objects.create(
+            title="Other Author Essay",
+            content="other content",
+            author=self.other_author,
+            status=Post.Status.PUBLISHED,
+            view_count=999,
+        )
+
+        # Engagements for author
+        PostLike.objects.create(post=self.post_live, user=self.reader)
+        Bookmark.objects.create(post=self.post_live, user=self.reader)
+        Comment.objects.create(
+            post=self.post_live,
+            author=self.reader,
+            body="Brilliant read!",
+            is_approved=True,
+        )
+        AuthorFollow.objects.create(follower=self.reader, author=self.author)
+
+        # Engagement on other author's post (must not leak)
+        PostLike.objects.create(post=self.post_other, user=self.reader)
+
+    def test_analytics_requires_authentication(self):
+        res = self.client.get("/api/posts/analytics/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_author_analytics_metrics_and_isolation(self):
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get("/api/posts/analytics/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        data = res.data
+        totals = data["totals"]
+        self.assertEqual(totals["posts"], 2)
+        self.assertEqual(totals["published_posts"], 1)
+        self.assertEqual(totals["drafts_count"], 1)
+        self.assertEqual(totals["views"], 105)
+        # Read time: 100*3 + 5*2 = 310
+        self.assertEqual(totals["total_read_time_minutes"], 310)
+        self.assertEqual(totals["likes"], 1)
+        self.assertEqual(totals["bookmarks"], 1)
+        self.assertEqual(totals["comments"], 1)
+        self.assertEqual(totals["followers"], 1)
+
+        # Top posts
+        self.assertEqual(len(data["top_posts"]), 1)
+        self.assertEqual(data["top_posts"][0]["slug"], self.post_live.slug)
+        self.assertEqual(data["top_posts"][0]["likes_count"], 1)
+        self.assertEqual(data["top_posts"][0]["bookmarks_count"], 1)
+        self.assertEqual(data["top_posts"][0]["comments_count"], 1)
+
+        # Catalog breakdown
+        self.assertEqual(len(data["posts_breakdown"]), 2)
+        slugs = [p["slug"] for p in data["posts_breakdown"]]
+        self.assertIn(self.post_live.slug, slugs)
+        self.assertIn(self.post_draft.slug, slugs)
+        self.assertNotIn(self.post_other.slug, slugs)
+
+        # Category distribution
+        self.assertEqual(len(data["category_distribution"]), 1)
+        cat_data = data["category_distribution"][0]
+        self.assertEqual(cat_data["name"], "Technology")
+        self.assertEqual(cat_data["total_views"], 100)
+
+        # Monthly trends list
+        self.assertIsInstance(data["monthly_trends"], list)
+        self.assertEqual(len(data["monthly_trends"]), 6)
+
+    def test_web_dashboard_includes_enriched_analytics(self):
+        self.client.login(username="writer_analytics", password="pass12345")
+        res = self.client.get(reverse("blog:dashboard"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, "Total read time")
+        self.assertContains(res, "Engagement rate")
+        self.assertContains(res, "Followers")
+
