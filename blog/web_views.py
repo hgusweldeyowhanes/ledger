@@ -280,17 +280,33 @@ class DashboardView(ListView):
         ctx["series_form"] = SeriesForm()
         authored = Post.objects.filter(author=self.request.user, is_deleted=False)
         published = authored.filter(status=Post.Status.PUBLISHED)
+        total_views = sum(authored.values_list("view_count", flat=True))
+        total_likes = PostLike.objects.filter(post__author=self.request.user).count()
+        total_bookmarks = Bookmark.objects.filter(post__author=self.request.user).count()
+        total_comments = Comment.objects.filter(
+            post__author=self.request.user, is_approved=True, is_deleted=False
+        ).count()
+        total_followers = AuthorFollow.objects.filter(author=self.request.user).count()
+        total_read_time = sum(
+            (p.view_count or 0) * (p.reading_time or 1) for p in authored.only("view_count", "reading_time")
+        )
         ctx["analytics"] = {
             "total_posts": authored.count(),
             "published_posts": published.count(),
-            "total_views": sum(authored.values_list("view_count", flat=True)),
+            "total_views": total_views,
+            "total_read_time_minutes": total_read_time,
             "avg_reading_time": round(
-                sum(authored.values_list("reading_time", flat=True)) / max(1, authored.count()), 2
+                sum(authored.values_list("reading_time", flat=True)) / max(1, authored.count()), 1
             ),
-            "total_likes": PostLike.objects.filter(post__author=self.request.user).count(),
-            "total_comments": Comment.objects.filter(
-                post__author=self.request.user, is_approved=True, is_deleted=False
-            ).count(),
+            "total_likes": total_likes,
+            "total_bookmarks": total_bookmarks,
+            "total_comments": total_comments,
+            "total_followers": total_followers,
+            "engagement_rate": (
+                round(((total_likes + total_bookmarks + total_comments) / max(total_views, 1)) * 100, 1)
+                if total_views > 0
+                else 0.0
+            ),
         }
         ctx["recent_revisions"] = (
             PostRevision.objects.filter(post__author=self.request.user)

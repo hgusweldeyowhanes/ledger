@@ -223,28 +223,162 @@ class PostViewSet(viewsets.ModelViewSet):
             total_views=Sum("view_count"),
             avg_reading_time=Avg("reading_time"),
         )
-        top_posts = (
-            published.annotate(
+        total_views = totals["total_views"] or 0
+        total_posts = totals["total_posts"] or 0
+        published_count = published.count()
+        drafts_count = posts.filter(status=Post.Status.DRAFT).count()
+        avg_reading_time = round(float(totals["avg_reading_time"] or 0), 1)
+
+        # Total read time delivered across all views
+        total_read_time_minutes = sum(
+            (p.view_count or 0) * (p.reading_time or 1) for p in posts.only("view_count", "reading_time")
+        )
+
+        # Engagements
+        total_likes = PostLike.objects.filter(post__author=request.user).count()
+        total_bookmarks = Bookmark.objects.filter(post__author=request.user).count()
+        total_comments = Comment.objects.filter(
+            post__author=request.user, is_approved=True, is_deleted=False
+        ).count()
+        total_followers = AuthorFollow.objects.filter(author=request.user).count()
+
+        total_engagements = total_likes + total_bookmarks + total_comments
+        engagement_rate = (
+            round((total_engagements / max(total_views, 1)) * 100, 1) if total_views > 0 else 0.0
+        )
+
+        # Annotated posts query for breakdowns
+        posts_annotated = (
+            posts.annotate(
                 likes_count=Count("likes", distinct=True),
+                bookmarks_count=Count("bookmarks", distinct=True),
                 comments_count=Count(
                     "comments",
                     filter=Q(comments__is_approved=True, comments__is_deleted=False),
                     distinct=True,
                 ),
             )
-            .order_by("-view_count", "-likes_count")[:5]
+            .order_by("-view_count", "-likes_count")
         )
+
+        top_posts_qs = posts_annotated.filter(status=Post.Status.PUBLISHED)[:5]
+        top_posts_data = [
+            {
+                "id": p.id,
+                "title": p.title,
+                "slug": p.slug,
+                "view_count": p.view_count,
+                "likes_count": p.likes_count,
+                "bookmarks_count": p.bookmarks_count,
+                "comments_count": p.comments_count,
+                "reading_time": p.reading_time,
+                "published_at": p.published_at.isoformat() if p.published_at else None,
+                "engagement_rate": (
+                    round(((p.likes_count + p.bookmarks_count + p.comments_count) / max(p.view_count, 1)) * 100, 1)
+                    if p.view_count > 0 else 0.0
+                ),
+            }
+            for p in top_posts_qs
+        ]
+
+        # Full catalog breakdown
+        posts_breakdown = [
+            {
+                "id": p.id,
+                "title": p.title,
+                "slug": p.slug,
+                "status": p.status,
+                "view_count": p.view_count,
+                "likes_count": p.likes_count,
+                "bookmarks_count": p.bookmarks_count,
+                "comments_count": p.comments_count,
+                "reading_time": p.reading_time,
+                "published_at": p.published_at.isoformat() if p.published_at else None,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "engagement_rate": (
+                    round(((p.likes_count + p.bookmarks_count + p.comments_count) / max(p.view_count, 1)) * 100, 1)
+                    if p.view_count > 0 else 0.0
+                ),
+            }
+            for p in posts_annotated.order_by("-published_at", "-created_at")
+        ]
+
+        # Category distribution
+        category_map = {}
+        for p in published.prefetch_related("categories"):
+            for cat in p.categories.all():
+                if cat.id not in category_map:
+                    category_map[cat.id] = {
+                        "id": cat.id,
+                        "name": cat.name,
+                        "slug": cat.slug,
+                        "color": cat.color,
+                        "posts_count": 0,
+                        "total_views": 0,
+                    }
+                category_map[cat.id]["posts_count"] += 1
+                category_map[cat.id]["total_views"] += p.view_count
+
+        category_distribution = sorted(
+            category_map.values(), key=lambda x: x["total_views"], reverse=True
+        )
+        for cat in category_distribution:
+            cat["percentage"] = (
+                round((cat["total_views"] / max(total_views, 1)) * 100, 1) if total_views > 0 else 0.0
+            )
+
+        # Monthly trends (last 6 calendar months)
+        now = timezone.now()
+        monthly_trends = []
+        for i in range(5, -1, -1):
+            year = now.year
+            month = now.month - i
+            while month <= 0:
+                month += 12
+                year -= 1
+            month_posts = published.filter(published_at__year=year, published_at__month=month)
+            month_views = month_posts.aggregate(v=Sum("view_count"))["v"] or 0
+            monthly_trends.append({
+                "label": f"{year}-{month:02d}",
+                "month_name": timezone.datetime(year, month, 1).strftime("%b %Y"),
+                "posts_count": month_posts.count(),
+                "views": month_views,
+            })
+
+        # Recent reader interactions
+        recent_notifs = Notification.objects.filter(recipient=request.user).select_related("actor", "post")[:10]
+        recent_activity = [
+            {
+                "id": n.id,
+                "verb": n.verb,
+                "actor_username": n.actor.username if n.actor else "A reader",
+                "post_title": n.post.title if n.post else None,
+                "post_slug": n.post.slug if n.post else None,
+                "created_at": n.created_at.isoformat(),
+            }
+            for n in recent_notifs
+        ]
+
         return Response(
             {
                 "totals": {
-                    "posts": totals["total_posts"] or 0,
-                    "published_posts": published.count(),
-                    "views": totals["total_views"] or 0,
-                    "avg_reading_time": round(float(totals["avg_reading_time"] or 0), 2),
+                    "posts": total_posts,
+                    "published_posts": published_count,
+                    "drafts_count": drafts_count,
+                    "views": total_views,
+                    "total_read_time_minutes": total_read_time_minutes,
+                    "avg_reading_time": avg_reading_time,
+                    "likes": total_likes,
+                    "bookmarks": total_bookmarks,
+                    "comments": total_comments,
+                    "followers": total_followers,
+                    "engagement_rate": engagement_rate,
                 },
-                "top_posts": PostListSerializer(
-                    top_posts, many=True, context={"request": request}
-                ).data,
+                "top_posts": top_posts_data,
+                "posts_breakdown": posts_breakdown,
+                "category_distribution": category_distribution,
+                "monthly_trends": monthly_trends,
+                "recent_activity": recent_activity,
             }
         )
 
