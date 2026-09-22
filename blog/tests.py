@@ -8,11 +8,13 @@ from rest_framework.test import APITestCase
 
 from blog.models import (
     AuthorFollow,
+    Bookmark,
     Category,
     Comment,
     NewsletterSubscriber,
     Notification,
     Post,
+    PostLike,
     PostRevision,
     Series,
     SeriesMembership,
@@ -379,21 +381,19 @@ class AuthorAnalyticsAPITests(APITestCase):
 
         self.post_live = Post.objects.create(
             title="Deep Learning Post",
-            content="words " * 200,
+            content="words " * 600,
             author=self.author,
             status=Post.Status.PUBLISHED,
             view_count=100,
-            reading_time=3,
         )
         self.post_live.categories.add(self.category)
 
         self.post_draft = Post.objects.create(
             title="Unpublished Notes",
-            content="draft notes",
+            content="draft " * 400,
             author=self.author,
             status=Post.Status.DRAFT,
             view_count=5,
-            reading_time=2,
         )
 
         # Other author's post (must be excluded)
