@@ -18,6 +18,7 @@ export const blogApi = {
   bookmark: (slug) => api(`/api/posts/${slug}/bookmark/`, { method: "POST" }),
   mine: () => api("/api/posts/mine/"),
   saved: () => api("/api/posts/saved/"),
+  analytics: () => api("/api/posts/analytics/"),
   followingFeed: () => api("/api/feed/following/"),
   categories: () => api("/api/categories/", { auth: false }),
   seriesList: () => api("/api/series/", { auth: false }),
