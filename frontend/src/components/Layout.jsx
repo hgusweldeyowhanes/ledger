@@ -55,6 +55,7 @@ export default function Layout() {
               <NavLink to="/notifications">Alerts</NavLink>
               <NavLink to="/write">Write</NavLink>
               <NavLink to="/studio">Studio</NavLink>
+              <NavLink to="/analytics">Analytics</NavLink>
               <button type="button" className="theme-toggle" onClick={logout}>
                 Log out
               </button>
